@@ -13,6 +13,10 @@ YELLOW = "\033[33m"
 BLUE = "\033[34m"
 WHITE = "\033[97m"
 
+START_2024 = 6652
+START_2025 = 7034
+START_PAGE = START_2025
+
 TEAMS = {
     "ATL": ["atl", "atlanta", "hawks"],
     "BOS": ["bos", "boston", "celtics"],
@@ -160,10 +164,9 @@ def parse_message(tag: Tag):
 if __name__ == "__main__":
     logger = setup_logging(logging.INFO)
     entries = {}
-    start_page = 6652
     last_page = 0
     LIMIT = 5
-    for page in range(start_page, start_page + LIMIT):
+    for page in range(START_PAGE, START_PAGE + LIMIT):
         soup = fetch_soup(page)
         entries.update(get_messages(soup))
         if not last_page:
