@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
-from bs4 import BeautifulSoup, Tag
-from datetime import datetime
 import logging
 import re
+from datetime import datetime
+
 import requests
+from bs4 import BeautifulSoup, Tag
 
 RESET = "\033[0m"
 RED = "\033[31m"
@@ -15,7 +16,8 @@ WHITE = "\033[97m"
 
 START_2024 = 6652
 START_2025 = 7034
-START_PAGE = START_2025
+START_2026 = 7325
+START_PAGE = START_2026
 
 TEAMS = {
     "ATL": ["atl", "atlanta", "hawks"],
@@ -97,7 +99,7 @@ def parse_date(message: Tag) -> datetime:
     return datetime.strptime(date_string, format)
 
 
-def cleanup_text(text: Tag) -> list[str]:
+def cleanup_text(text: Tag) -> None:
     cleanup = []
     cleanup += text.find_all("div")  # removes quotes
     cleanup += text.find_all("img")  # removes images
@@ -129,7 +131,11 @@ def parse_line(line: str) -> dict:
     assert len(scores) == 2, f"must have exactly two scores {scores}"
     assert scores.count(4) == 1, f"exactly one score must be 4 {scores}"
     winner = teams[0] if scores[0] > scores[1] else teams[1]
-    return {"result": (winner, sum(scores)), "teams": tuple(teams), "scores": tuple(scores)}
+    return {
+        "result": (winner, sum(scores)),
+        "teams": tuple(teams),
+        "scores": tuple(scores),
+    }
 
 
 def parse_message(tag: Tag):
@@ -139,7 +145,7 @@ def parse_message(tag: Tag):
     if not metadata.a:
         logger.info(f"MESSAGE: {user}")
         raise AssertionError("advertisement.")
-    id = metadata.a.get("name")[1:]
+    id = metadata.a["name"][1:]
     date = parse_date(tag)
     logger.info(f"MESSAGE: {date} #{id} {WHITE}{user}{RESET}")
     text = tag.find("div", id=f"para{id}")
@@ -161,8 +167,7 @@ def parse_message(tag: Tag):
     return {"user": user, "id": id, "date": date, "results": tuple(series)}
 
 
-if __name__ == "__main__":
-    logger = setup_logging(logging.INFO)
+def main() -> None:
     entries = {}
     last_page = 0
     LIMIT = 5
@@ -178,5 +183,12 @@ if __name__ == "__main__":
     logger.info(f"{WHITE}EXPORT{RESET}:")
     sep = ","
     for id in entries:
-        results = sep.join([f"{winner}{sep}{score}" for winner, score in entries[id]["results"]])
+        results = sep.join(
+            [f"{winner}{sep}{score}" for winner, score in entries[id]["results"]]
+        )
         print(f"{WHITE}{entries[id]['user']}{RESET}{sep}{sep}{results}")
+
+
+logger = setup_logging(logging.INFO)
+if __name__ == "__main__":
+    main()

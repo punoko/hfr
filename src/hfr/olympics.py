@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 
-from bs4 import BeautifulSoup, Tag
-from datetime import datetime
 import logging
 import re
-import requests
 from collections import defaultdict
+from datetime import datetime
+
+import requests
+from bs4 import BeautifulSoup, Tag
 
 TOPIC_BASE_URL = "https://forum.hardware.fr/hfr/Discussions/Sports/olympiques-objectif-medailles-sujet_111788"
 
@@ -87,7 +88,7 @@ def cleanup_text(text: Tag) -> list[str]:
 
 def parse_message(tag: Tag):
     metadata = tag.find("td", class_="messCase1")
-    user = metadata.b.string.strip().replace("\u200B", "")
+    user = metadata.b.string.strip().replace("\u200b", "")
     logger.info("")
     if not metadata.a:
         logger.info(f"MESSAGE: {user}")
@@ -175,4 +176,3 @@ if __name__ == "__main__":
     logger.info(f"{WHITE}TOP MINUTES{RESET}:")
     minutes = sorted([(v, k) for k, v in minute_count.items() if v > 1], reverse=True)
     print_top(minutes, 20)
-
