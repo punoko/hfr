@@ -2,7 +2,7 @@
 Collection of scripts for HFR
 
 ### nba.py : NBA Playoffs prono scrapper
-Usage: `python3 nba.py`\
+Usage: `uv run hfr-nba`\
 Output: csv\
 To Do:
 - automatic sorting by seeds

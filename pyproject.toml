@@ -1,7 +1,7 @@
 [project]
 name = "hfr"
 dynamic = ["version"]
-description = "Collection of scripts for hfr"
+description = "Collection of scripts for HFR"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
