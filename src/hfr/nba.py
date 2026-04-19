@@ -1,5 +1,7 @@
-#!/usr/bin/env python3
+# pyright: reportOptionalMemberAccess=false
+# pyright: reportAttributeAccessIssue=false
 
+import argparse
 import logging
 import re
 from datetime import datetime
@@ -7,17 +9,14 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup, Tag
 
+logger = logging.getLogger(__name__)
+
 RESET = "\033[0m"
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 BLUE = "\033[34m"
 WHITE = "\033[97m"
-
-START_2024 = 6652
-START_2025 = 7034
-START_2026 = 7325
-START_PAGE = START_2026
 
 TEAMS = {
     "ATL": ["atl", "atlanta", "hawks"],
@@ -53,20 +52,34 @@ TEAMS = {
 }
 
 
-def setup_logging(level: int) -> logging.Logger:
-    logging.basicConfig(level=level)
-    logger = logging.getLogger(__name__)
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("%(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    logger.propagate = False
-    return logger
+class InvalidLineError(ValueError):
+    def __init__(self, err: str = "Invalid line") -> None:
+        super().__init__(err)
+
+
+class InvalidMessageError(ValueError):
+    def __init__(self, err: str = "Invalid message") -> None:
+        super().__init__(err)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument("-s", "--start", help="page to start parsing from", type=int)
+    parser.add_argument("-p", "--pages", help="number of pages to parse", type=int, default=3)
+    parser.add_argument("-q", "--quiet", help="print results only", action="store_true")
+    return parser.parse_args()
+
+
+def url(page: int) -> str:
+    base = "https://forum.hardware.fr"
+    path = "/hfr/Discussions/Sports/sujet_20548"
+    return f"{base}{path}_{page}.htm"
 
 
 def fetch_soup(page: int) -> BeautifulSoup:
-    url = f"https://forum.hardware.fr/hfr/Discussions/Sports/basket-nba-prono-sujet_20548_{page}.htm"
-    response = requests.get(url=url)
+    response = requests.get(url=url(page), timeout=5)
     response.raise_for_status()
     logger.info("")
     logger.info(f"{WHITE}FETCHED:{RESET} page {page}")
@@ -79,7 +92,7 @@ def get_last_page(soup: BeautifulSoup) -> int:
     return int(div.contents[-1].string)
 
 
-def get_messages(soup: BeautifulSoup):
+def get_messages(soup: BeautifulSoup) -> dict:
     entries = {}
     messages = soup.find_all("tr", class_="message")
     for message in messages:
@@ -87,7 +100,7 @@ def get_messages(soup: BeautifulSoup):
             entry = parse_message(message)
             entries[entry["id"]] = entry
             logger.info(f"{GREEN}ACCEPT{RESET}: {entry['results']}")
-        except AssertionError as e:
+        except InvalidMessageError as e:
             logger.info(f"{RED}DISCARD{RESET}: {e}")
     return entries
 
@@ -95,11 +108,11 @@ def get_messages(soup: BeautifulSoup):
 def parse_date(message: Tag) -> datetime:
     date_tag = message.find("td", class_="messCase2").div.div
     date_string = next(date_tag.stripped_strings)
-    format = "Posté le %d-%m-%Y à %H:%M:%S"
-    return datetime.strptime(date_string, format)
+    fmt = "Posté le %d-%m-%Y à %H:%M:%S"
+    return datetime.strptime(date_string, fmt)  # noqa: DTZ007
 
 
-def cleanup_text(text: Tag) -> None:
+def cleanup_text(text: Tag | None) -> None:
     cleanup = []
     cleanup += text.find_all("div")  # removes quotes
     cleanup += text.find_all("img")  # removes images
@@ -125,11 +138,16 @@ def parse_line(line: str) -> dict:
                 teams.append(team)
                 break
     scores = [int(n) for n in re.findall(SCORE_REGEX, line)]
-    assert teams, "no team found"
-    assert scores, "no score found"
-    assert len(teams) == 2, f"must have exactly two teams {teams}"
-    assert len(scores) == 2, f"must have exactly two scores {scores}"
-    assert scores.count(4) == 1, f"exactly one score must be 4 {scores}"
+    if not teams:
+        raise InvalidLineError(err="no team found")
+    if len(teams) != 2:  # noqa:PLR2004
+        raise InvalidLineError(err=f"must have exactly two teams {teams}")
+    if not scores:
+        raise InvalidLineError(err="no score found")
+    if len(scores) != 2:  # noqa:PLR2004
+        raise InvalidLineError(err=f"must have exactly two scores {scores}")
+    if scores.count(4) != 1:
+        raise InvalidLineError(err=f"exactly one score must be 4 {scores}")
     winner = teams[0] if scores[0] > scores[1] else teams[1]
     return {
         "result": (winner, sum(scores)),
@@ -138,57 +156,69 @@ def parse_line(line: str) -> dict:
     }
 
 
-def parse_message(tag: Tag):
+def parse_message(tag: Tag) -> dict:
     metadata = tag.find("td", class_="messCase1")
     user = metadata.b.string.strip()
     logger.info("")
     if not metadata.a:
         logger.info(f"MESSAGE: {user}")
-        raise AssertionError("advertisement.")
-    id = metadata.a["name"][1:]
+        raise InvalidMessageError(err="advertisement")
+    msg_id = metadata.a["name"][1:]
     date = parse_date(tag)
-    logger.info(f"MESSAGE: {date} #{id} {WHITE}{user}{RESET}")
-    text = tag.find("div", id=f"para{id}")
+    logger.info(f"MESSAGE: {date} #{msg_id} '{WHITE}{user}{RESET}'")
+    text = tag.find("div", id=f"para{msg_id}")
     cleanup_text(text)
     series = []
     lines = list(text.stripped_strings)
     if lines and lines[0] == "Reprise du message précédent :":
-        raise AssertionError("skipping first message of new page (duplicate).")
+        raise InvalidMessageError(err="skipping first message of new page (duplicate)")
     for line in lines:
         try:
             data = parse_line(line)
             logger.info(f"{BLUE}MATCH{RESET}: {data} ({line})")
             series.append(data.get("result"))
-        except AssertionError as e:
+        except InvalidLineError as e:
             logger.info(f"{YELLOW}DISCARD{RESET}: {e} ({line})")
 
-    assert len(series) > 0, "no series found."
-    assert len(series) == 15, f"number of series must be 15, found {len(series)}."
-    return {"user": user, "id": id, "date": date, "results": tuple(series)}
+    if len(series) == 0:
+        raise InvalidMessageError(err="no series found")
+    if len(series) != 15:  # noqa:PLR2004
+        raise InvalidMessageError(err=f"number of series must be 15, found {len(series)}")
+    return {"user": user, "id": msg_id, "date": date, "results": tuple(series)}
 
 
 def main() -> None:
+    logging.basicConfig(format="%(message)s")
+    args = parse_args()
+    if not args.quiet:
+        logger.setLevel(logging.INFO)
+
     entries = {}
-    last_page = 0
-    LIMIT = 5
-    for page in range(START_PAGE, START_PAGE + LIMIT):
+
+    # use a number so big it's always the last page
+    last_soup = fetch_soup(99999)
+    last_page = get_last_page(last_soup)
+
+    if args.start:
+        start_page = args.start
+        end_page = args.start + args.pages
+    else:
+        start_page = last_page - args.pages + 1
+        end_page = last_page
+
+    for page in range(start_page, end_page + 1):
+        if page >= last_page:
+            entries.update(get_messages(last_soup))
+            break
         soup = fetch_soup(page)
         entries.update(get_messages(soup))
-        if not last_page:
-            last_page = get_last_page(soup)
-        if page >= last_page:
-            break
 
     logger.info("")
     logger.info(f"{WHITE}EXPORT{RESET}:")
-    sep = ","
-    for id in entries:
-        results = sep.join(
-            [f"{winner}{sep}{score}" for winner, score in entries[id]["results"]]
-        )
-        print(f"{WHITE}{entries[id]['user']}{RESET}{sep}{sep}{results}")
+    for i in entries:
+        results = ",".join([f"{winner},{score}" for winner, score in entries[i]["results"]])
+        print(f"{WHITE}{entries[i]['user']}{RESET},,{results}")  # noqa: T201
 
 
-logger = setup_logging(logging.INFO)
 if __name__ == "__main__":
     main()

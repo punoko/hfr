@@ -1,6 +1,8 @@
 [project]
 name = "hfr"
-dynamic = ["version"]
+dynamic = [
+    "version",
+]
 description = "Collection of scripts for HFR"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -9,19 +11,28 @@ dependencies = [
     "requests>=2.33.1",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.15.11",
+]
+
 [project.scripts]
-hfr-nba = "hfr.nba:main"
+nba = "hfr.nba:main"
 
 [build-system]
-requires      = ["hatchling", "hatch-vcs"]
+requires = [
+    "hatchling",
+    "hatch-vcs",
+]
 build-backend = "hatchling.build"
-
-[dependency-groups]
-dev = ["ruff>=0.15.11"]
-
-[tool.ruff.lint]
-select = ["ALL"]
-ignore = ["D", "COM812"]
 
 [tool.hatch.version]
 source = "vcs"
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "D",
+    "COM812",
+    "G004",
+]
