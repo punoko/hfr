@@ -17,6 +17,7 @@ GREEN = "\033[32m"
 YELLOW = "\033[33m"
 BLUE = "\033[34m"
 WHITE = "\033[97m"
+ITALIC = "\033[3m"
 
 TEAMS = {
     "ATL": ["atl", "atlanta", "hawks"],
@@ -72,14 +73,9 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def url(page: int) -> str:
-    base = "https://forum.hardware.fr"
-    path = "/hfr/Discussions/Sports/sujet_20548"
-    return f"{base}{path}_{page}.htm"
-
-
 def fetch_soup(page: int) -> BeautifulSoup:
-    response = requests.get(url=url(page), timeout=5)
+    url = f"https://forum.hardware.fr/hfr/Discussions/Sports/sujet_20548_{page}.htm"
+    response = requests.get(url=url, timeout=3)
     response.raise_for_status()
     logger.info("")
     logger.info(f"{WHITE}FETCHED:{RESET} page {page}")
@@ -113,37 +109,38 @@ def parse_date(message: Tag) -> datetime:
 
 
 def cleanup_text(text: Tag | None) -> None:
-    cleanup = []
-    cleanup += text.find_all("div")  # removes quotes
+    cleanup = text.find_all("span")  # removes signatures
     cleanup += text.find_all("img")  # removes images
-    cleanup += text.find_all("span")  # removes signatures
+    cleanup += text.find_all("div")  # removes quotes
     for tag in cleanup:
         tag.decompose()
 
 
-WORD_REGEX = re.compile(r"\b\w{2,}\b")
-SCORE_REGEX = re.compile(r"(?<!\()\b[0-4]\b(?!\))")
 # (?<!\() negative lookbehind to ensure the digit is not preceeded by an opening parenthesis
 # (?!\)) negative lookahead to ensure the digit is not followed by a closing parenthesis
 # this is because Piccolo likes to write team seeds, otherwise the regex could just be \b[0-4]\b
+WORD_REGEX = re.compile(r"\b\w{2,}\b")
+SCORE_REGEX = re.compile(r"(?<!\()\b[0-4]\b(?!\))")
 
 
 def parse_line(line: str) -> dict:
     line = line.casefold()
-    teams = []
     words = re.findall(WORD_REGEX, line)
+    teams = []
     for word in words:
         for team, names in TEAMS.items():
             if word in names and team not in teams:
                 teams.append(team)
                 break
-    scores = [int(n) for n in re.findall(SCORE_REGEX, line)]
     if len(teams) != 2:  # noqa:PLR2004
-        raise InvalidLineError(err=f"must have exactly two teams, found {len(teams)}: {teams}")
+        raise InvalidLineError(err=f"must have exactly 2 teams, found {len(teams)}: {teams}")
+
+    scores = [int(n) for n in re.findall(SCORE_REGEX, line)]
     if len(scores) != 2:  # noqa:PLR2004
-        raise InvalidLineError(err=f"must have exactly two scores, found {len(scores)} {scores}")
+        raise InvalidLineError(err=f"must have exactly 2 scores, found {len(scores)} {scores}")
     if scores.count(4) != 1:
         raise InvalidLineError(err=f"exactly one score must be 4 {scores}")
+
     winner = teams[0] if scores[0] > scores[1] else teams[1]
     return {
         "result": (winner, sum(scores)),
@@ -159,15 +156,17 @@ def parse_message(tag: Tag) -> dict:
     if not metadata.a:
         logger.info(f"MESSAGE: {user}")
         raise InvalidMessageError(err="advertisement")
-    msg_id = metadata.a["name"][1:]
+    _id = metadata.a["name"][1:]
     date = parse_date(tag)
-    logger.info(f"MESSAGE: {date} #{msg_id} '{WHITE}{user}{RESET}'")
-    text = tag.find("div", id=f"para{msg_id}")
+    logger.info(f"MESSAGE: {date} #{_id} {ITALIC}{user}{RESET}")
+
+    text = tag.find("div", id=f"para{_id}")
     cleanup_text(text)
-    series = []
     lines = list(text.stripped_strings)
     if lines and lines[0] == "Reprise du message précédent :":
         raise InvalidMessageError(err="skipping first message of new page (duplicate)")
+
+    series = []
     for line in lines:
         try:
             data = parse_line(line)
@@ -178,7 +177,7 @@ def parse_message(tag: Tag) -> dict:
 
     if len(series) != 15:  # noqa:PLR2004
         raise InvalidMessageError(err=f"number of series must be 15, found {len(series)}")
-    return {"user": user, "id": msg_id, "date": date, "results": tuple(series)}
+    return {"user": user, "id": _id, "date": date, "results": tuple(series)}
 
 
 def main() -> None:
@@ -186,8 +185,6 @@ def main() -> None:
     args = parse_args()
     if not args.quiet:
         logger.setLevel(logging.INFO)
-
-    entries = {}
 
     last_soup = fetch_soup(99999)  # number big enough to always be the last page
     last_page = get_last_page(last_soup)
@@ -199,6 +196,7 @@ def main() -> None:
         start_page = last_page - args.pages + 1
         end_page = last_page
 
+    entries = {}
     for page in range(start_page, end_page + 1):
         if page >= last_page:
             entries.update(get_messages(last_soup))
