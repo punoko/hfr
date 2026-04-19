@@ -12,12 +12,12 @@ from bs4 import BeautifulSoup, Tag
 logger = logging.getLogger(__name__)
 
 RESET = "\033[0m"
+ITALIC = "\033[3m"
 RED = "\033[31m"
 GREEN = "\033[32m"
 YELLOW = "\033[33m"
 BLUE = "\033[34m"
 WHITE = "\033[97m"
-ITALIC = "\033[3m"
 
 TEAMS = {
     "ATL": ["atl", "atlanta", "hawks"],
