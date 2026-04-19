@@ -52,13 +52,13 @@ TEAMS = {
 }
 
 
-class InvalidLineError(ValueError):
-    def __init__(self, err: str = "Invalid line") -> None:
+class InvalidLineError(Exception):
+    def __init__(self, err: str) -> None:
         super().__init__(err)
 
 
-class InvalidMessageError(ValueError):
-    def __init__(self, err: str = "Invalid message") -> None:
+class InvalidMessageError(Exception):
+    def __init__(self, err: str) -> None:
         super().__init__(err)
 
 
@@ -138,14 +138,10 @@ def parse_line(line: str) -> dict:
                 teams.append(team)
                 break
     scores = [int(n) for n in re.findall(SCORE_REGEX, line)]
-    if not teams:
-        raise InvalidLineError(err="no team found")
     if len(teams) != 2:  # noqa:PLR2004
-        raise InvalidLineError(err=f"must have exactly two teams {teams}")
-    if not scores:
-        raise InvalidLineError(err="no score found")
+        raise InvalidLineError(err=f"must have exactly two teams, found {len(teams)}: {teams}")
     if len(scores) != 2:  # noqa:PLR2004
-        raise InvalidLineError(err=f"must have exactly two scores {scores}")
+        raise InvalidLineError(err=f"must have exactly two scores, found {len(scores)} {scores}")
     if scores.count(4) != 1:
         raise InvalidLineError(err=f"exactly one score must be 4 {scores}")
     winner = teams[0] if scores[0] > scores[1] else teams[1]
@@ -180,8 +176,6 @@ def parse_message(tag: Tag) -> dict:
         except InvalidLineError as e:
             logger.info(f"{YELLOW}DISCARD{RESET}: {e} ({line})")
 
-    if len(series) == 0:
-        raise InvalidMessageError(err="no series found")
     if len(series) != 15:  # noqa:PLR2004
         raise InvalidMessageError(err=f"number of series must be 15, found {len(series)}")
     return {"user": user, "id": msg_id, "date": date, "results": tuple(series)}
@@ -195,8 +189,7 @@ def main() -> None:
 
     entries = {}
 
-    # use a number so big it's always the last page
-    last_soup = fetch_soup(99999)
+    last_soup = fetch_soup(99999)  # number big enough to always be the last page
     last_page = get_last_page(last_soup)
 
     if args.start:
